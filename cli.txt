@@ -1,0 +1,239 @@
+프로젝트 생성 
+openstack project create project1 
+openstack project show project1 
+1-1)quota 수정 
+openstack quota set --instances 5 --ram 2048 project1 
+openstack quota list --compute
+
+사용자 생성 
+openstack user create --password openstack --project project1 user1 
+(openstack user create --password-prompt --project project1 user1) 
+openstack user show user1
+
+역할 생성 
+openstack role create project1_role 
+openstack role show project1_role
+
+프로젝트에 사용자, 역할 할당 
+openstack role add --project project1 --user user1 project1_role 
+openstack role add --project project1 --user user1 _member_ 
+
+openstack role list 
+openstack project list 
+openstack role assignment list
+
+Public 네트워크 생성
+openstack network create --external --provider-network-type flat --provider-physical-network extnet public
+openstack subnet create --network public --no-dhcp --allocation-pool start=172.25.0.100,end=172.25.0.150 --subnet-range 172.25.0.0/24 --gateway=172.25.0.2 public_subnet
+
+openstack network show public
+openstack subnet show public_subnet
+
+FLAVOR 생성
+openstack flavor create --id 6 --ram 2048 --disk 10 --vcpus 2 --swap 1024 m1.myflavor
+openstack flavor show m1.myflavor
+
+사용자 keystonerc 파일 생성
+cp keystonerc_admin keystonerc_user1
+vi keystonerc_user1
+
+unset OS_SERVICE_TOKEN
+export OS_USERNAME=user1
+export OS_PASSWORD='openstack'
+export OS_AUTH_URL=http://172.25.0.10:5000/v3 export PS1='[\u@\h \W(keystone_user1)]$ '
+
+export OS_PROJECT_NAME=project1
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_IDENTITY_API_VERSION=3
+
+Private 네트워크 생성
+openstack network create --internal private
+openstack subnet create --dhcp --subnet-range 10.0.0.0/24 --network private private_subnet
+
+openstack network show private
+openstack subnet show private_subnet
+
+라우터 생성
+openstack router create vRouter
+openstack router show vRouter
+
+openstack router set --external-gateway public vRouter
+(neutron router-gateway-set vRouter public)
+openstack router show vRouter
+openstack router add subnet vRouter private_subnet
+openstack router show vRouter
+
+이미지 생성
+openstack image create --file=/root/CentOS-7-x86_64-GenericCloud.qcow2 --disk-format qcow2 --unprotected centos_img
+openstack image create --file=/root/cirros-0.4.0-x86_64-disk.img --disk-format qcow2 --unprotected cirros_img
+openstack image show cirros_img
+
+보안그룹 생성
+openstack security group create sec1
+openstack security group rule create --protocol tcp --dst-port 80 --ingress sec1
+openstack security group rule create --protocol tcp --dst-port 22 --ingress sec1
+openstack security group rule create --protocol icmp --ingress sec1
+openstack security group show sec1
+
+keypair 생성
+openstack keypair create key1 > /root/key1.pem
+openstack keypair show key1
+
+chmod 600 key1.pem
+openstack keypair list
+13) Floating ip 생성
+openstack floating ip create public
+openstack floating ip list
+
+인스턴스 생성
+openstack server create --image cirros_img --flavor m1.myflavor --security-group sec1 --key-name key1 --nic net-id=364be929-8e87-4ae1-9476-4bb2fb7d2ff8 cirros_instance
+(net-id는 openstack network list 중에서 private id)
+openstack server show centos_instance
+
+Floating IP 할당
+openstack server add floating ip centos_instance 172.25.0.109
+(172.25.0.102는 openstack floating ip list 에 나오는 IP로 선택)
+openstack floating ip list
+openstack server show cirros_instance
+
+인스턴스 접속
+
+ssh -i /root/key1.pem centos@172.25.0.102
+sudo passwd root
+
+cat /etc/yum.repo.d/CentOS-Base.repo
+cat /etc/resolv.conf 
+yum -y install httpd
+systemctl start httpd
+systemctl enable httpd
+
+볼륨 생성
+openstack volume create --size 1 --type iscsi data-volume
+openstack volume create --size 10 --type iscsi --image centos_img root-volume
+openstack volume list
+openstack volume show data-volume
+
+볼륨 인스턴스 연결/제거
+openstack volume list
+nova list
+openstack server add volume centos_instance data-volume
+(nova volume-attach centos_server 4b0e4343-4777-4cfa-a74c-5acab0422ddb /dev/vdb)
+openstack server show centos_instance
+
+인스턴스 접속
+lsblk
+fdisk -l
+df -h
+fdisk /dev/vdb (파티션)
+su -
+Password:
+Last login: Fri May 25 06:02:30 UTC 2018 on pts/0
+[root@centos-instance ~]# lsblk
+NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
+vda 253:0 0 10G 0 disk
+mqvda1 253:1 0 10G 0 part / vdb 253:16 0 1G 0 disk
+[root@centos-instance ~]# fdisk /dev/vdb
+Welcome to fdisk (util-linux 2.23.2).
+
+Changes will remain in memory only, until you decide to write them.
+Be careful before using the write command.
+
+Device does not contain a recognized partition table
+Building a new DOS disklabel with disk identifier 0x39d56afc.
+
+Command (m for help): m
+Command action
+a toggle a bootable flag
+b edit bsd disklabel
+c toggle the dos compatibility flag
+d delete a partition
+g create a new empty GPT partition table 
+G create an IRIX (SGI) partition table 
+l list known partition types 
+m print this menu 
+n add a new partition 
+o create a new empty DOS partition table 
+p print the partition table 
+q quit without saving changes 
+s create a new empty Sun disklabel 
+t change a partition's system id 
+u change display/entry units 
+v verify the partition table 
+w write table to disk and exit 
+x extra functionality (experts only) 
+
+Command (m for help): n 
+Partition type: 
+p primary (0 primary, 0 extended, 4 free) 
+e extended 
+Select (default p): p 
+Partition number (1-4, default 1): 
+First sector (2048-2097151, default 2048): 
+Using default value 2048 
+Last sector, +sectors or +size{K,M,G} (2048-2097151, default 2097151): 
+Using default value 2097151 
+Partition 1 of type Linux and of size 1023 MiB is set 
+
+Command (m for help): m 
+Command action 
+a toggle a bootable flag 
+b edit bsd disklabel 
+c toggle the dos compatibility flag 
+d delete a partition 
+g create a new empty GPT partition table 
+G create an IRIX (SGI) partition table 
+l list known partition types 
+m print this menu 
+n add a new partition 
+o create a new empty DOS partition table 
+p print the partition table 
+q quit without saving changes 
+s create a new empty Sun disklabel 
+t change a partition's system id 
+u change display/entry units 
+v verify the partition table 
+w write table to disk and exit 
+x extra functionality (experts only) 
+
+Command (m for help): w 
+The partition table has been altered! 
+
+Calling ioctl() to re-read partition table. 
+Syncing disks. 
+
+mkfs.ext4 /dev/vdb1(포맷) 
+mount /dev/vdb1 /mnt/busan(마운트) 
+vi /mnt/busan/hello 
+
+openstack server remove volume centos_instance data-volume 
+(nova volume-detach centos_server 4b0e4343-4777-4cfa-a74c-5acab0422ddb) 
+
+openstack server add volume centos_instance data-volume
+
+
+lsblk 
+df -h 
+fdisk -l 
+mkdir /mnt/busan 
+mount /dev/vdb1 /mnt/busan 
+vi /mnt/busan/hello ### 데이타 확인 
+
+18) snapshot 
+openstack volume list 
+openstack volume snapshot list 
+openstack volume snapshot create --force --volume data-volume volume-snapshot 
+openstack volume snapshot show volume-snapshot 
+openstack volume create --snapshot volume-snapshot --size 3 snap_vol1 
+openstack volume show snap_vol1 
+
+openstack volume snapshot list 
+
+19) SWIFT Container 
+swift list 
+openstack container create busan_container 
+openstack container show busan_container 
+(openstack swift create container busan_container) 
+swift upload busan_container /root/answers.txt 
+swift list busan_container 
+swift download busan_container root/answers.txt
